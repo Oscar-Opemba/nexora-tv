@@ -1,0 +1,118 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: #0a0a0f;
+  color: #ffffff;
+  font-family: 'Inter', -apple-system, sans-serif;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* TV-style focus outlines */
+:focus-visible {
+  outline: 3px solid #ffffff;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Remove default focus for mouse users */
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.15);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255,255,255,0.3);
+}
+
+/* Carousel scroll hide scrollbar */
+.carousel-scroll {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.carousel-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+/* Card focus ring */
+.card-focus:focus-visible {
+  outline: 3px solid #ffffff;
+  outline-offset: 3px;
+  border-radius: 8px;
+  box-shadow: 0 0 20px rgba(255,255,255,0.2);
+}
+
+/* Hero text animation */
+@keyframes heroFadeIn {
+  from { opacity: 0; transform: translateY(30px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.hero-animate {
+  animation: heroFadeIn 0.6s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+/* Skeleton loading */
+@keyframes skeleton {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.8; }
+}
+.skeleton {
+  animation: skeleton 1.5s ease-in-out infinite;
+  background: linear-gradient(90deg, #1a1a24 25%, #252535 50%, #1a1a24 75%);
+  background-size: 400% 100%;
+}
+
+/* Video player controls */
+.player-controls {
+  background: linear-gradient(to top, rgba(0,0,0,0.9) 0%, rgba(0,0,0,0.3) 50%, transparent 100%);
+}
+
+/* Nav transition */
+.nav-rail {
+  transition: width 350ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Hover card scale */
+.content-card {
+  transition: transform 300ms ease, box-shadow 300ms ease;
+}
+.content-card:hover,
+.content-card:focus-visible {
+  transform: scale(1.05);
+  z-index: 10;
+}
+
+/* Profile avatar */
+.profile-avatar {
+  transition: transform 200ms ease, ring 200ms ease;
+}
+.profile-avatar:hover,
+.profile-avatar:focus-visible {
+  transform: scale(1.08);
+  outline: 3px solid white;
+  outline-offset: 3px;
+}
