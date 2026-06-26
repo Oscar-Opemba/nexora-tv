@@ -32,9 +32,13 @@ const VideoPlayer: React.FC = () => {
   const [progress, setProgress] = useState(0);
 
   const content = currentContentId ? getContentById(currentContentId) : null;
+  const [currentEpisodeIdx, setCurrentEpisodeIdx] = React.useState(0);
 
-  // Demo video — Big Buck Bunny
-  const DEMO_VIDEO = 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4';
+  // Use real stream URL from content data (videos2.csv), fallback to demo
+  const FALLBACK = 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4';
+  const episodes = content?.episodes;
+  const currentEpisode = episodes && episodes.length > 0 ? episodes[currentEpisodeIdx] : null;
+  const streamUrl = currentEpisode?.streamUrl || content?.streamUrl || FALLBACK;
 
   const resetHideTimer = useCallback(() => {
     clearTimeout(hideTimerRef.current);
@@ -125,6 +129,17 @@ const VideoPlayer: React.FC = () => {
     resetHideTimer();
   };
 
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const nextEpisode = useCallback(() => {
+    if (episodes && currentEpisodeIdx < episodes.length - 1) {
+      setCurrentEpisodeIdx(i => i + 1);
+      if (videoRef.current) {
+        videoRef.current.currentTime = 0;
+        videoRef.current.play().catch(() => {});
+      }
+    }
+  }, [episodes, currentEpisodeIdx]);
   const skip = (seconds: number) => {
     if (videoRef.current) videoRef.current.currentTime += seconds;
     resetHideTimer();
@@ -174,7 +189,7 @@ const VideoPlayer: React.FC = () => {
           {/* Video */}
           <video
             ref={videoRef}
-            src={DEMO_VIDEO}
+            src={streamUrl}
             className="w-full h-full object-contain"
             autoPlay
             playsInline
