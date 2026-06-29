@@ -1,19 +1,49 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
-import { UserProfile, AppUser, WatchHistoryEntry } from '../types';
+import { supabase } from '../lib/supabase';
+import type { User, Session } from '../lib/supabase';
+
+export interface TvProfile {
+  id: string;
+  name: string;
+  avatar_url: string;
+  color: string;
+  is_kids: boolean;
+}
+
+export interface WatchHistoryEntry {
+  content_id: string;
+  episode_id?: string;
+  progress: number;
+  last_watched: string;
+}
 
 interface AppContextType {
-  user: AppUser | null;
-  activeProfile: UserProfile | null;
+  // Auth
+  user: User | null;
+  session: Session | null;
   isAuthenticated: boolean;
+  authLoading: boolean;
   login: (email: string, password: string) => Promise<void>;
   signup: (email: string, password: string, name: string) => Promise<void>;
-  logout: () => void;
-  selectProfile: (profileId: string) => void;
-  addToFavorites: (contentId: string) => void;
-  removeFromFavorites: (contentId: string) => void;
+  logout: () => Promise<void>;
+  resetPassword: (email: string) => Promise<void>;
+
+  // TV Profiles
+  tvProfiles: TvProfile[];
+  activeProfile: TvProfile | null;
+  selectProfile: (profile: TvProfile) => void;
+  createProfile: (name: string, color: string) => Promise<void>;
+
+  // Content state
+  favorites: string[];
+  watchHistory: WatchHistoryEntry[];
+  addToFavorites: (contentId: string) => Promise<void>;
+  removeFromFavorites: (contentId: string) => Promise<void>;
   isFavorite: (contentId: string) => boolean;
-  updateProgress: (contentId: string, progress: number, episodeId?: string) => void;
+  updateProgress: (contentId: string, progress: number, episodeId?: string) => Promise<void>;
   getProgress: (contentId: string) => number;
+
+  // UI
   isNavOpen: boolean;
   setNavOpen: (open: boolean) => void;
   currentContentId: string | null;
@@ -22,128 +52,224 @@ interface AppContextType {
   setPlayerOpen: (open: boolean) => void;
 }
 
-const DEFAULT_PROFILES: UserProfile[] = [
-  { id: '1', name: 'Ozzie', avatar: 'https://i.pravatar.cc/150?img=11', color: '#e50914' },
-  { id: '2', name: 'Guest', avatar: 'https://i.pravatar.cc/150?img=15', color: '#0071eb' },
-  { id: 'kids', name: 'Kids', avatar: 'https://i.pravatar.cc/150?img=19', color: '#46d369', isKids: true },
-];
-
 const AppContext = createContext<AppContextType | null>(null);
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<AppUser | null>(null);
+  const [user, setUser] = useState<User | null>(null);
+  const [session, setSession] = useState<Session | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [tvProfiles, setTvProfiles] = useState<TvProfile[]>([]);
+  const [activeProfile, setActiveProfile] = useState<TvProfile | null>(null);
+  const [favorites, setFavorites] = useState<string[]>([]);
+  const [watchHistory, setWatchHistory] = useState<WatchHistoryEntry[]>([]);
   const [isNavOpen, setNavOpen] = useState(false);
   const [currentContentId, setCurrentContentId] = useState<string | null>(null);
   const [isPlayerOpen, setPlayerOpen] = useState(false);
 
-  // Load persisted state
+  // ── Auth state listener ──────────────────────────────────────
   useEffect(() => {
-    const saved = localStorage.getItem('nexora_user');
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        setUser(parsed);
-      } catch {}
-    }
+    // Get initial session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setUser(session?.user ?? null);
+      setAuthLoading(false);
+    });
+
+    // Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (_event, session) => {
+        setSession(session);
+        setUser(session?.user ?? null);
+        setAuthLoading(false);
+      }
+    );
+
+    return () => subscription.unsubscribe();
   }, []);
 
-  const persistUser = (u: AppUser | null) => {
-    if (u) localStorage.setItem('nexora_user', JSON.stringify(u));
-    else localStorage.removeItem('nexora_user');
+  // ── Load TV profiles when user changes ───────────────────────
+  useEffect(() => {
+    if (!user) {
+      setTvProfiles([]);
+      setActiveProfile(null);
+      setFavorites([]);
+      setWatchHistory([]);
+      return;
+    }
+    loadTvProfiles();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
+
+  // ── Load profile data when activeProfile changes ─────────────
+  useEffect(() => {
+    if (!activeProfile) return;
+    loadFavorites();
+    loadWatchHistory();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeProfile]);
+
+  const loadTvProfiles = async () => {
+    if (!user) return;
+    const { data, error } = await supabase
+      .from('tv_profiles')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: true });
+
+    if (error) { console.error('loadTvProfiles:', error); return; }
+
+    if (data && data.length > 0) {
+      setTvProfiles(data as TvProfile[]);
+      // Restore last selected profile from localStorage
+      const savedId = localStorage.getItem('nexora_active_profile');
+      const saved = data.find(p => p.id === savedId);
+      setActiveProfile(saved ? saved as TvProfile : data[0] as TvProfile);
+    }
   };
 
-  const login = useCallback(async (email: string, _password: string) => {
-    // Mock auth — in production connect to Supabase
-    const newUser: AppUser = {
-      id: Math.random().toString(36).slice(2),
+  const loadFavorites = async () => {
+    if (!activeProfile) return;
+    const { data, error } = await supabase
+      .from('favorites')
+      .select('content_id')
+      .eq('profile_id', activeProfile.id);
+
+    if (error) { console.error('loadFavorites:', error); return; }
+    setFavorites(data?.map(f => f.content_id) ?? []);
+  };
+
+  const loadWatchHistory = async () => {
+    if (!activeProfile) return;
+    const { data, error } = await supabase
+      .from('watch_history')
+      .select('content_id, episode_id, progress, last_watched')
+      .eq('profile_id', activeProfile.id)
+      .order('last_watched', { ascending: false });
+
+    if (error) { console.error('loadWatchHistory:', error); return; }
+    setWatchHistory((data ?? []) as WatchHistoryEntry[]);
+  };
+
+  // ── Auth actions ─────────────────────────────────────────────
+  const login = useCallback(async (email: string, password: string) => {
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) throw new Error(error.message);
+  }, []);
+
+  const signup = useCallback(async (email: string, password: string, name: string) => {
+    const { error } = await supabase.auth.signUp({
       email,
-      profiles: DEFAULT_PROFILES,
-      activeProfileId: DEFAULT_PROFILES[0].id,
-      watchHistory: [],
-      favorites: [],
-    };
-    setUser(newUser);
-    persistUser(newUser);
+      password,
+      options: { data: { full_name: name } },
+    });
+    if (error) throw new Error(error.message);
   }, []);
 
-  const signup = useCallback(async (email: string, _password: string, name: string) => {
-    const profiles: UserProfile[] = [
-      { id: '1', name, avatar: 'https://i.pravatar.cc/150?img=11', color: '#e50914' },
-    ];
-    const newUser: AppUser = {
-      id: Math.random().toString(36).slice(2),
-      email,
-      profiles,
-      activeProfileId: profiles[0].id,
-      watchHistory: [],
-      favorites: [],
-    };
-    setUser(newUser);
-    persistUser(newUser);
+  const logout = useCallback(async () => {
+    await supabase.auth.signOut();
+    localStorage.removeItem('nexora_active_profile');
   }, []);
 
-  const logout = useCallback(() => {
-    setUser(null);
-    persistUser(null);
+  const resetPassword = useCallback(async (email: string) => {
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/reset-password`,
+    });
+    if (error) throw new Error(error.message);
   }, []);
 
-  const selectProfile = useCallback((profileId: string) => {
+  // ── Profile actions ──────────────────────────────────────────
+  const selectProfile = useCallback((profile: TvProfile) => {
+    setActiveProfile(profile);
+    localStorage.setItem('nexora_active_profile', profile.id);
+  }, []);
+
+  const createProfile = useCallback(async (name: string, color: string) => {
     if (!user) return;
-    const updated = { ...user, activeProfileId: profileId };
-    setUser(updated);
-    persistUser(updated);
+    const { data, error } = await supabase
+      .from('tv_profiles')
+      .insert({ user_id: user.id, name, color })
+      .select()
+      .single();
+
+    if (error) throw new Error(error.message);
+    if (data) setTvProfiles(prev => [...prev, data as TvProfile]);
   }, [user]);
 
-  const addToFavorites = useCallback((contentId: string) => {
-    if (!user) return;
-    const updated = { ...user, favorites: [...user.favorites, contentId] };
-    setUser(updated);
-    persistUser(updated);
-  }, [user]);
+  // ── Favorites ────────────────────────────────────────────────
+  const addToFavorites = useCallback(async (contentId: string) => {
+    if (!user || !activeProfile) return;
+    const { error } = await supabase
+      .from('favorites')
+      .upsert({ user_id: user.id, profile_id: activeProfile.id, content_id: contentId });
 
-  const removeFromFavorites = useCallback((contentId: string) => {
-    if (!user) return;
-    const updated = { ...user, favorites: user.favorites.filter(f => f !== contentId) };
-    setUser(updated);
-    persistUser(updated);
-  }, [user]);
+    if (!error) setFavorites(prev => [...prev.filter(f => f !== contentId), contentId]);
+  }, [user, activeProfile]);
+
+  const removeFromFavorites = useCallback(async (contentId: string) => {
+    if (!activeProfile) return;
+    const { error } = await supabase
+      .from('favorites')
+      .delete()
+      .eq('profile_id', activeProfile.id)
+      .eq('content_id', contentId);
+
+    if (!error) setFavorites(prev => prev.filter(f => f !== contentId));
+  }, [activeProfile]);
 
   const isFavorite = useCallback((contentId: string) => {
-    return user?.favorites.includes(contentId) ?? false;
-  }, [user]);
+    return favorites.includes(contentId);
+  }, [favorites]);
 
-  const updateProgress = useCallback((contentId: string, progress: number, episodeId?: string) => {
-    if (!user) return;
-    const existing = user.watchHistory.find(w => w.contentId === contentId);
-    const entry: WatchHistoryEntry = {
-      contentId,
-      progress,
-      lastWatched: new Date(),
-      episodeId,
-    };
-    const history = existing
-      ? user.watchHistory.map(w => w.contentId === contentId ? entry : w)
-      : [...user.watchHistory, entry];
-    const updated = { ...user, watchHistory: history };
-    setUser(updated);
-    persistUser(updated);
-  }, [user]);
+  // ── Watch progress ───────────────────────────────────────────
+  const updateProgress = useCallback(async (contentId: string, progress: number, episodeId?: string) => {
+    if (!user || !activeProfile) return;
+    const { error } = await supabase
+      .from('watch_history')
+      .upsert({
+        user_id: user.id,
+        profile_id: activeProfile.id,
+        content_id: contentId,
+        episode_id: episodeId ?? null,
+        progress,
+        last_watched: new Date().toISOString(),
+      }, { onConflict: 'profile_id,content_id' });
+
+    if (!error) {
+      setWatchHistory(prev => {
+        const exists = prev.find(w => w.content_id === contentId);
+        const entry: WatchHistoryEntry = {
+          content_id: contentId,
+          episode_id: episodeId,
+          progress,
+          last_watched: new Date().toISOString(),
+        };
+        return exists
+          ? prev.map(w => w.content_id === contentId ? entry : w)
+          : [entry, ...prev];
+      });
+    }
+  }, [user, activeProfile]);
 
   const getProgress = useCallback((contentId: string) => {
-    return user?.watchHistory.find(w => w.contentId === contentId)?.progress ?? 0;
-  }, [user]);
-
-  const activeProfile = user?.profiles.find(p => p.id === user.activeProfileId) ?? null;
+    return watchHistory.find(w => w.content_id === contentId)?.progress ?? 0;
+  }, [watchHistory]);
 
   return (
     <AppContext.Provider value={{
       user,
-      activeProfile,
+      session,
       isAuthenticated: !!user,
+      authLoading,
       login,
       signup,
       logout,
+      resetPassword,
+      tvProfiles,
+      activeProfile,
       selectProfile,
+      createProfile,
+      favorites,
+      watchHistory,
       addToFavorites,
       removeFromFavorites,
       isFavorite,

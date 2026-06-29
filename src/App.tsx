@@ -2,7 +2,7 @@ import React from 'react';
 import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
 import { AnimatePresence } from 'framer-motion';
 
-import { AppProvider } from './context/AppContext';
+import { AppProvider, useApp } from './context/AppContext';
 import NavRail from './components/layout/NavRail';
 import ProtectedRoute from './components/layout/ProtectedRoute';
 import VideoPlayer from './components/player/VideoPlayer';
@@ -19,7 +19,22 @@ import AuthPage from './pages/AuthPage';
 
 const AppShell: React.FC = () => {
   const location = useLocation();
+  const { authLoading } = useApp();
   const isAuthPage = location.pathname === '/auth';
+
+  // Show spinner while Supabase checks session
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-10 h-10 rounded-xl bg-[#46d369] flex items-center justify-center font-black text-black text-lg animate-pulse">
+            N
+          </div>
+          <div className="w-8 h-8 border-2 border-white/10 border-t-white rounded-full animate-spin" />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#0a0a0f]">

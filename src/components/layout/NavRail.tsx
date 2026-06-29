@@ -100,7 +100,7 @@ const NavRail: React.FC = () => {
           aria-label="View profile"
         >
           <img
-            src={activeProfile.avatar}
+            src={activeProfile.avatar_url}
             alt={activeProfile.name}
             className="w-8 h-8 rounded-full shrink-0"
             style={{ outline: `2px solid ${activeProfile.color}`, outlineOffset: '1px' }}
