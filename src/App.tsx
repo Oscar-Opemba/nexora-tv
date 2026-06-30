@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
 import { AnimatePresence } from 'framer-motion';
 
 import { AppProvider, useApp } from './context/AppContext';
+import ErrorBoundary from './components/ErrorBoundary';
 import NavRail from './components/layout/NavRail';
 import ProtectedRoute from './components/layout/ProtectedRoute';
 import VideoPlayer from './components/player/VideoPlayer';
@@ -88,11 +89,13 @@ const AppShell: React.FC = () => {
 };
 
 const App: React.FC = () => (
-  <BrowserRouter>
-    <AppProvider>
-      <AppShell />
-    </AppProvider>
-  </BrowserRouter>
+  <ErrorBoundary>
+    <BrowserRouter>
+      <AppProvider>
+        <AppShell />
+      </AppProvider>
+    </BrowserRouter>
+  </ErrorBoundary>
 );
 
 export default App;

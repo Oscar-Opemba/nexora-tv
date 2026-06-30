@@ -78,7 +78,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setUser(session?.user ?? null);
         setAuthLoading(false);
       })
-      .catch(() => {
+      .catch((err) => {
+        // Corrupted/stale session in localStorage (e.g. from testing with
+        // placeholder keys) can crash the Supabase client on init.
+        // Wipe any sb-* auth keys and retry once with a clean slate.
+        console.warn('Supabase getSession failed, clearing stale auth state:', err);
+        try {
+          Object.keys(localStorage)
+            .filter(k => k.startsWith('sb-') || k.includes('supabase'))
+            .forEach(k => localStorage.removeItem(k));
+        } catch {}
         clearTimeout(timeout);
         setAuthLoading(false);
       });
