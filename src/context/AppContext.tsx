@@ -68,14 +68,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // ── Auth state listener ──────────────────────────────────────
   useEffect(() => {
-    // Get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      setAuthLoading(false);
-    });
+    // Safety timeout: if Supabase never responds (bad/missing keys), unblock UI after 3s
+    const timeout = setTimeout(() => setAuthLoading(false), 3000);
 
-    // Listen for auth changes
+    supabase.auth.getSession()
+      .then(({ data: { session } }) => {
+        clearTimeout(timeout);
+        setSession(session);
+        setUser(session?.user ?? null);
+        setAuthLoading(false);
+      })
+      .catch(() => {
+        clearTimeout(timeout);
+        setAuthLoading(false);
+      });
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (_event, session) => {
         setSession(session);
@@ -84,7 +91,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     );
 
-    return () => subscription.unsubscribe();
+    return () => {
+      clearTimeout(timeout);
+      subscription.unsubscribe();
+    };
   }, []);
 
   // ── Load TV profiles when user changes ───────────────────────
@@ -110,44 +120,81 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const loadTvProfiles = async () => {
     if (!user) return;
-    const { data, error } = await supabase
-      .from('tv_profiles')
-      .select('*')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: true });
+    try {
+      const { data, error } = await supabase
+        .from('tv_profiles')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: true });
 
-    if (error) { console.error('loadTvProfiles:', error); return; }
+      if (error) {
+        // Tables might not exist yet — create a fallback local profile
+        console.warn('tv_profiles not ready:', error.message);
+        const fallback: TvProfile = {
+          id: 'local-' + user.id,
+          name: user.email?.split('@')[0] || 'Me',
+          avatar_url: 'https://i.pravatar.cc/150?img=11',
+          color: '#46d369',
+          is_kids: false,
+        };
+        setTvProfiles([fallback]);
+        setActiveProfile(fallback);
+        return;
+      }
 
-    if (data && data.length > 0) {
-      setTvProfiles(data as TvProfile[]);
-      // Restore last selected profile from localStorage
-      const savedId = localStorage.getItem('nexora_active_profile');
-      const saved = data.find(p => p.id === savedId);
-      setActiveProfile(saved ? saved as TvProfile : data[0] as TvProfile);
+      if (data && data.length > 0) {
+        setTvProfiles(data as TvProfile[]);
+        const savedId = localStorage.getItem('nexora_active_profile');
+        const saved = data.find((p: any) => p.id === savedId);
+        setActiveProfile(saved ? saved as TvProfile : data[0] as TvProfile);
+      } else {
+        // Signed in but no TV profiles — create a default one
+        const fallback: TvProfile = {
+          id: 'local-' + user.id,
+          name: user.email?.split('@')[0] || 'Me',
+          avatar_url: 'https://i.pravatar.cc/150?img=11',
+          color: '#46d369',
+          is_kids: false,
+        };
+        setTvProfiles([fallback]);
+        setActiveProfile(fallback);
+      }
+    } catch (e) {
+      console.error('loadTvProfiles exception:', e);
+      // Always unblock the UI with a fallback profile
+      const fallback: TvProfile = {
+        id: 'local-' + (user?.id || 'guest'),
+        name: user?.email?.split('@')[0] || 'Me',
+        avatar_url: 'https://i.pravatar.cc/150?img=11',
+        color: '#46d369',
+        is_kids: false,
+      };
+      setTvProfiles([fallback]);
+      setActiveProfile(fallback);
     }
   };
 
   const loadFavorites = async () => {
-    if (!activeProfile) return;
-    const { data, error } = await supabase
-      .from('favorites')
-      .select('content_id')
-      .eq('profile_id', activeProfile.id);
-
-    if (error) { console.error('loadFavorites:', error); return; }
-    setFavorites(data?.map(f => f.content_id) ?? []);
+    if (!activeProfile || activeProfile.id.startsWith('local-')) return;
+    try {
+      const { data, error } = await supabase
+        .from('favorites')
+        .select('content_id')
+        .eq('profile_id', activeProfile.id);
+      if (!error) setFavorites(data?.map((f: any) => f.content_id) ?? []);
+    } catch (e) { console.warn('loadFavorites:', e); }
   };
 
   const loadWatchHistory = async () => {
-    if (!activeProfile) return;
-    const { data, error } = await supabase
-      .from('watch_history')
-      .select('content_id, episode_id, progress, last_watched')
-      .eq('profile_id', activeProfile.id)
-      .order('last_watched', { ascending: false });
-
-    if (error) { console.error('loadWatchHistory:', error); return; }
-    setWatchHistory((data ?? []) as WatchHistoryEntry[]);
+    if (!activeProfile || activeProfile.id.startsWith('local-')) return;
+    try {
+      const { data, error } = await supabase
+        .from('watch_history')
+        .select('content_id, episode_id, progress, last_watched')
+        .eq('profile_id', activeProfile.id)
+        .order('last_watched', { ascending: false });
+      if (!error) setWatchHistory((data ?? []) as WatchHistoryEntry[]);
+    } catch (e) { console.warn('loadWatchHistory:', e); }
   };
 
   // ── Auth actions ─────────────────────────────────────────────
@@ -197,23 +244,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // ── Favorites ────────────────────────────────────────────────
   const addToFavorites = useCallback(async (contentId: string) => {
-    if (!user || !activeProfile) return;
-    const { error } = await supabase
-      .from('favorites')
-      .upsert({ user_id: user.id, profile_id: activeProfile.id, content_id: contentId });
-
-    if (!error) setFavorites(prev => [...prev.filter(f => f !== contentId), contentId]);
+    if (!activeProfile) return;
+    // Optimistic update always
+    setFavorites(prev => [...prev.filter(f => f !== contentId), contentId]);
+    // Persist to DB only if real profile
+    if (user && !activeProfile.id.startsWith('local-')) {
+      try {
+        await supabase.from('favorites').upsert({
+          user_id: user.id, profile_id: activeProfile.id, content_id: contentId
+        });
+      } catch (e) { console.warn('addToFavorites:', e); }
+    }
   }, [user, activeProfile]);
 
   const removeFromFavorites = useCallback(async (contentId: string) => {
-    if (!activeProfile) return;
-    const { error } = await supabase
-      .from('favorites')
-      .delete()
-      .eq('profile_id', activeProfile.id)
-      .eq('content_id', contentId);
-
-    if (!error) setFavorites(prev => prev.filter(f => f !== contentId));
+    // Optimistic update
+    setFavorites(prev => prev.filter(f => f !== contentId));
+    if (activeProfile && !activeProfile.id.startsWith('local-')) {
+      try {
+        await supabase.from('favorites').delete()
+          .eq('profile_id', activeProfile.id).eq('content_id', contentId);
+      } catch (e) { console.warn('removeFromFavorites:', e); }
+    }
   }, [activeProfile]);
 
   const isFavorite = useCallback((contentId: string) => {
@@ -222,31 +274,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // ── Watch progress ───────────────────────────────────────────
   const updateProgress = useCallback(async (contentId: string, progress: number, episodeId?: string) => {
-    if (!user || !activeProfile) return;
-    const { error } = await supabase
-      .from('watch_history')
-      .upsert({
-        user_id: user.id,
-        profile_id: activeProfile.id,
-        content_id: contentId,
-        episode_id: episodeId ?? null,
-        progress,
-        last_watched: new Date().toISOString(),
-      }, { onConflict: 'profile_id,content_id' });
-
-    if (!error) {
-      setWatchHistory(prev => {
-        const exists = prev.find(w => w.content_id === contentId);
-        const entry: WatchHistoryEntry = {
+    const entry: WatchHistoryEntry = {
+      content_id: contentId,
+      episode_id: episodeId,
+      progress,
+      last_watched: new Date().toISOString(),
+    };
+    // Optimistic update
+    setWatchHistory(prev => {
+      const exists = prev.find(w => w.content_id === contentId);
+      return exists
+        ? prev.map(w => w.content_id === contentId ? entry : w)
+        : [entry, ...prev];
+    });
+    // Persist to DB only if real profile
+    if (user && activeProfile && !activeProfile.id.startsWith('local-')) {
+      try {
+        await supabase.from('watch_history').upsert({
+          user_id: user.id,
+          profile_id: activeProfile.id,
           content_id: contentId,
-          episode_id: episodeId,
+          episode_id: episodeId ?? null,
           progress,
           last_watched: new Date().toISOString(),
-        };
-        return exists
-          ? prev.map(w => w.content_id === contentId ? entry : w)
-          : [entry, ...prev];
-      });
+        }, { onConflict: 'profile_id,content_id' });
+      } catch (e) { console.warn('updateProgress:', e); }
     }
   }, [user, activeProfile]);
 

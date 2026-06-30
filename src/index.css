@@ -20,6 +20,28 @@ html, body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* ── Fix: explicit input styles (Tailwind bg-white/x not always rendering) ── */
+input, textarea, select {
+  background-color: rgba(255, 255, 255, 0.06) !important;
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+input::placeholder, textarea::placeholder {
+  color: rgba(255, 255, 255, 0.30);
+}
+
+input:focus, textarea:focus, select:focus {
+  background-color: rgba(255, 255, 255, 0.10) !important;
+  border-color: rgba(255, 255, 255, 0.30);
+  outline: none;
+}
+
+input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* TV-style focus outlines */
 :focus-visible {
   outline: 3px solid #ffffff;
@@ -27,35 +49,19 @@ html, body {
   border-radius: 4px;
 }
 
-/* Remove default focus for mouse users */
 :focus:not(:focus-visible) {
   outline: none;
 }
 
 /* Scrollbar */
-::-webkit-scrollbar {
-  width: 4px;
-  height: 4px;
-}
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-::-webkit-scrollbar-thumb {
-  background: rgba(255,255,255,0.15);
-  border-radius: 4px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: rgba(255,255,255,0.3);
-}
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.3); }
 
-/* Carousel scroll hide scrollbar */
-.carousel-scroll {
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-}
-.carousel-scroll::-webkit-scrollbar {
-  display: none;
-}
+/* Hide carousel scrollbar */
+.carousel-scroll { scrollbar-width: none; -ms-overflow-style: none; }
+.carousel-scroll::-webkit-scrollbar { display: none; }
 
 /* Card focus ring */
 .card-focus:focus-visible {
@@ -70,10 +76,7 @@ html, body {
   from { opacity: 0; transform: translateY(30px); }
   to { opacity: 1; transform: translateY(0); }
 }
-
-.hero-animate {
-  animation: heroFadeIn 0.6s cubic-bezier(0.22, 1, 0.36, 1) forwards;
-}
+.hero-animate { animation: heroFadeIn 0.6s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
 
 /* Skeleton loading */
 @keyframes skeleton {
@@ -92,27 +95,11 @@ html, body {
 }
 
 /* Nav transition */
-.nav-rail {
-  transition: width 350ms cubic-bezier(0.4, 0, 0.2, 1);
-}
+.nav-rail { transition: width 350ms cubic-bezier(0.4, 0, 0.2, 1); }
 
-/* Hover card scale */
-.content-card {
-  transition: transform 300ms ease, box-shadow 300ms ease;
-}
-.content-card:hover,
-.content-card:focus-visible {
+/* Content card hover */
+.content-card { transition: transform 300ms ease, box-shadow 300ms ease; }
+.content-card:hover, .content-card:focus-visible {
   transform: scale(1.05);
   z-index: 10;
-}
-
-/* Profile avatar */
-.profile-avatar {
-  transition: transform 200ms ease, ring 200ms ease;
-}
-.profile-avatar:hover,
-.profile-avatar:focus-visible {
-  transform: scale(1.08);
-  outline: 3px solid white;
-  outline-offset: 3px;
 }
